@@ -1,0 +1,21 @@
+effect MyRead : string;;
+
+let myreader = handler
+             | effect MyRead k -> k "Bob"
+;;
+
+with myreader handle
+  print_string "What is your forename? ";
+  let forename = perform (MyRead ()) in
+  print_string "What is your surname?  ";
+  let surname = perform (MyRead ()) in
+  forename ^ " " ^ surname
+
+(*
+with myreader handle
+  print_string "What is your forename? ";
+  let forename = perform (Read ()) in
+  print_string "What is your surname?  ";
+  let surname = perform (Read ()) in
+  forename ^ " " ^ surname
+*)

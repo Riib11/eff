@@ -1,0 +1,27 @@
+type state = int
+
+effect Get : state;;
+effect Set : state -> unit;;
+
+let state init =
+  handler
+  | effect Get k -> fun s -> (k s) s
+  | effect (Set s) k -> fun _ -> (k ()) s
+  | x -> fun _ -> x
+  | finally g -> g init
+;;
+
+let add n = let m = perform Get in perform (Set (n + m))
+let mul n = let m = perform Get in perform (Set (n * m))
+
+let increment () = add 1
+let double () = mul 2
+
+;;
+
+with state 0 handle
+  increment ();
+  double ();
+  increment ();
+  double ();
+  perform Get
