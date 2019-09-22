@@ -1,0 +1,18 @@
+effect Decide : bool;;
+
+let choose b = handler
+  | effect Decide k -> k b
+;;
+
+with choose true handle print_string "decide: "; perform Decide;;
+with choose false handle print_string "decide: "; perform Decide;;
+
+let choose_all = handler
+  | effect Decide k -> k true @ k false (* concat *)
+  | x -> [x]
+;;
+
+let flip () = if perform Decide then 0 else 1;;
+let rec flips n = if n = 0 then [] else flip () :: flips (n-1);;
+
+with choose_all handle flips 5
