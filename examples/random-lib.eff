@@ -1,0 +1,61 @@
+(* This example is described in Section 6.9 of "Programming with Algebraic Effects and
+   Handlers" by A. Bauer and M. Pretnar. *)
+
+(* We represent finite distributions as lists of pairs (x,p) where
+   p is the probability of event x. *)
+effect Pick : float -> bool
+
+(* Picks uniformly from given list of events. *)
+let rec uniform_pick = function
+  | [] -> failwith "tried to uniform_pick from []"
+  | [x] -> x
+  | x :: xs ->
+      let n = length xs + 1 in
+      let p = 1.0 /. float_of_int n in
+      if perform (Pick p) then x else uniform_pick xs
+;;
+
+(* Picks according to distribution from a distribution list.
+   It is assumed that the distribution makes sense. *)
+
+let rec distribution_pick l =
+  let rec pick_aux acc = function
+  | [(x, _)] -> x
+  | (x, p)::xs ->
+    let adjusted_p = (p/.(1. -. acc)) in
+    if perform (Pick adjusted_p) then x else pick_aux (acc +. p) xs
+  in
+  pick_aux 0. l
+;;
+
+(* Combine two outcome distributions where the first outcome distribution is
+   chosen with the probability p and the second with probability 1-p. *)
+
+let combine p dist1 dist2 =
+  let scale p dist = map (fun (x, q) -> (x, p *. q)) dist in
+  let rec add (x, p) = function
+    | [] -> [(x, p)]
+    | (y, q) :: dist ->
+      if x = y then (x, p +. q) :: dist else (y, q) :: add (x, p) dist
+  in
+  let dist1 = scale p dist1 in
+  let dist2 = scale (1.0 -. p) dist2 in
+  fold_right add dist1 dist2
+;;
+
+(* This handler computes the distribution of outcomes of a probabilisitic
+   computation. *)
+let distribution = handler
+      (* Distribution of only one value. *)
+  | v -> [(v, 1.0)]
+      (* Combine possible distributions. *)
+  | effect (Pick p) k -> combine p (k true) (k false)
+;;
+
+(* The handler computing the expected value of a probabilistic computation
+   of type float. *)
+let expectation = handler
+  | v -> v
+  | effect (Pick p) k ->
+    p *. (k true) +. (1.0 -. p) *. (k false)
+;;

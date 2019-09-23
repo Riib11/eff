@@ -1,0 +1,123 @@
+(* # Blackjack
+
+   This program models a one-player game of blackjack,
+   where the player chooses a hit_max strategy
+   to play by. The bjstate hander keeps track of
+   the game state (deck and player score i.e. card sum),
+   and the distributio and expectation handlers
+   model the random possibilities presented by a
+   shuffled deck. *)
+
+(* random-lib:
+   - effect Choice,
+   - handlers expectation and distribution, and
+   - function uniform_pick *)
+#use "random-lib.eff";;
+
+let ($) f x = f x;;             (* useful notation *)
+
+(* ## Blackjack State *)
+
+(* card *)
+type suite = Hearts | Diamonds | Spades | Clubs;;
+type rank  = Rank of int;;
+type card  = Card of int * suite;;
+type deck  = card list;;
+
+let rank (Card (r,s)) = r;;
+let suite (Card (r,s)) = s;;
+
+(* score *)
+type score = int;;
+
+(* blackjack state *)
+type bjstate_t = deck * score;;
+effect Get : bjstate_t;;
+effect Set : bjstate_t -> unit;;
+
+let deck_init =
+  let make_set n = [ Card (n, Hearts)
+                   ; Card (n, Diamonds)
+                   ; Card (n, Spades)
+                   ; Card (n, Clubs) ] in
+  let rec make_deck = function
+    | 13 -> make_set 10 @ make_deck 12
+    | 12 -> make_set 10 @ make_deck 11
+    | 11 -> make_set 10 @ make_deck 10
+    | 1  -> make_set 11
+    | n  -> make_set n @ make_deck (n-1) in
+  make_deck 13
+;;
+
+let bjstate_init = (deck_init, 0);;
+
+let bjstate =
+  handler
+| s -> (fun _ -> s)
+| effect Get k -> (fun s -> (k s) s)
+| effect (Set s') k -> (fun _ -> (k ()) s')
+| finally g -> g bjstate_init
+;;
+
+(* ### Getting *)
+
+let get () = perform Get;;
+let gets f = let s = get () in f s;;
+let get_deck () = gets fst;;
+let get_score () = gets snd;;
+
+(* ### Setting *)
+
+let set s = perform (Set s);;
+let set_deck  deck'  = let score = get_score () in set (deck', score);;
+let set_score score' = let deck  = get_deck  () in set (deck,  score');;
+
+(* ### Useful actions *)
+
+(* pick and remove a random card from the deck *)
+let draw () =
+  let deck = get_deck () in
+  let card = uniform_pick deck in
+  set_deck $ complement deck [card];
+  card
+;;
+
+(* add s to the current score *)
+let add_score s =
+  let score = get_score () in
+  set_score $ score + s
+;;
+
+(* draw a card, then add its score to the current score
+   if the card is an ace (11), then it can be 1 if 11 results
+   in a bust *)
+let hit () =
+  let card = draw () in
+  let score = get_score () in
+  if (rank card = 11) && (score + rank card > 21) then
+    add_score 1
+  else
+    add_score $ rank card
+;;
+
+(* ## Main
+
+   Warning: this program takes a lot time to run because there are many possible games.
+   I haven't actually completed a computation on my own laptop... *)
+
+let main hit_max =
+  let rec loop () = if get_score () <= hit_max then (hit () ; loop ()) else () in
+  hit ();
+  hit ();
+  loop ();
+  get_score ()
+;;
+
+(* the chosen hit_max to play with *)
+let hit_max = 16;;
+
+(* computes the distribution of scores for the given hit_max strategy *)
+with distribution handle with bjstate handle main hit_max;;
+
+(* computers the expected score for the given hit_max strategy *)
+with expectation handle with bjstate handle main hit_max;;

@@ -15,4 +15,4 @@ let choose_all = handler
 let flip () = if perform Decide then 0 else 1;;
 let rec flips n = if n = 0 then [] else flip () :: flips (n-1);;
 
-with choose_all handle flips 5
+with choose_all handle flips 5;;

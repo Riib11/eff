@@ -1,0 +1,122 @@
+(* # Definitions *)
+
+type prob = float;;
+
+effect Pick : prob -> bool;;
+
+(* pick uniformly from a list *)
+let rec pick_uniform = function
+  | [] -> failwith "pick_uniform from empty list"
+  | [x] -> x
+  | x::xs ->
+    (* pick x with prob p, otherwise from xs *)
+    let n = length xs + 1 in
+    let p = 1.0 /. float_of_int n in
+    if perform (Pick p)
+    then x
+    else pick_uniform xs
+;;
+
+type 'a dist = ('a * prob) list;;
+
+(* pick according to weights from distribution *)
+let rec pick_distribution d =
+  let rec helper (p_acc:prob) = function
+    | [(x, _)] -> x
+    | (x, p)::xs ->
+      let p_adjusted = (p /. (1. -. p_acc)) in (* p relative to p_acc *)
+      if perform (Pick p_adjusted)
+      then x
+      else helper (p_acc +. p) xs
+  in
+  helper 0. d
+;;
+
+(* combine two distributions, where the first is weighted by p and the second by (p-1) *)
+let combine p d1 d2 =
+  let scale p d = map (fun (x, q) -> (x, p *. q)) d in
+  let rec add (x, p) = function
+    | [] -> [(x, p)]
+    | (y, q)::d ->
+      if x = y
+      then (x, p +. q) :: d
+      else (y, q) :: add (x, p) d
+  in
+  let d1 = scale p d1 in
+  let d2 = scale (1. -. p) d2 in
+  fold_right add d1 d2
+;;
+
+(* # Handlers *)
+
+(* Compute the distribution of outcomes of a probabilistic computation,
+   where there are two branches at each node. *)
+let distribution = handler
+                 | v -> [(v, 1.)]
+                 (* combine the distributions of each possible outcome *)
+                 | effect (Pick p) k -> combine p (k true) (k false)
+;;
+
+(* Compute the expected value of the outcome of a probabilistic computation. *)
+let expectation = handler
+                | v -> v
+                | effect (Pick p) k -> p*.(k true) +. (1. -. p)*.(k false)
+;;
+
+(* # Examples *)
+
+(* ## State *)
+
+effect Get : float
+    effect Set : float -> unit
+
+let state = handler
+          | x -> (fun _ -> x)
+          | effect Get k -> (fun s -> (k s) s)
+          | effect (Set s') k -> (fun s -> (k ()) s')
+          | finally g -> g 0.
+;;
+
+(* ## Example 1. Random Walk *)
+
+(* Take an n-step random walk, from 0,
+   with probabilities p and q for stepping left and right respectively *)
+let walk_random n p q =
+  let s = 1. -. p -. q in (* probability of standing still *)
+  with state handle
+    let rec step m =
+      let x' = perform Get +. pick_distribution [(-1., p); (0., s); (1., q)] in
+      perform (Set x');
+      if m > 0 then step (m - 1) else perform Get
+  in
+  step n
+;;
+
+with distribution handle walk_random 4 0.25 0.25;;
+with expectation handle walk_random 4 0.25 0.25;;
+
+(* ## Example 2. The Monty Hall Problem *)
+
+let monty_hall change =
+  (* there are three doors *)
+  let doors = ["A";"B";"C"] in
+  (* one door is picked at random to have the prize *)
+  let prize = pick_uniform doors in
+  (* the player first guesses a random door *)
+  let guess = pick_uniform doors in
+  (* the host opens a non-prize door other than the guess *)
+  let show = pick_uniform (complement doors [prize; guess]) in
+  (* the player either changes to the remaining door (change = true), or
+     stays with their original guess (change = false) *)
+  let final = if change then hd (complement doors [guess; show]) else guess in
+  (* win if the final is the prize door *)
+  if final = prize then 1. else 0.
+;;
+
+print_string "\noutcome distribution and expectation for 'stay' strategy:\n";
+with distribution handle monty_hall false;;
+with expectation handle monty_hall false;;
+
+print_string "\noutcome distribution and expectation for 'change' strategy:\n";
+with distribution handle monty_hall true;;
+with expectation handle monty_hall true;;
